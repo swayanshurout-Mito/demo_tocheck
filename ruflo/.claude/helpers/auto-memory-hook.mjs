@@ -11,7 +11,7 @@
  *   node auto-memory-hook.mjs status   # Show bridge status
  */
 
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs';
+import { existsSync, mkdirSync, readFileSync, writeFileSync, StringDecoder } from 'fs';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 
@@ -42,6 +42,7 @@ class JsonFileBackend {
   constructor(filePath) {
     this.filePath = filePath;
     this.entries = new Map();
+    this.decoder = new StringDecoder('utf8');
   }
 
   async initialize() {
@@ -239,112 +240,4 @@ async function doImport() {
     const result = await bridge.importFromAutoMemory();
     success(`Imported ${result.imported} entries (${result.skipped} skipped)`);
     dim(`├─ Backend entries: ${await backend.count()}`);
-    dim(`├─ Learning: ${config.learningBridge.enabled ? 'active' : 'disabled'}`);
-    dim(`├─ Graph: ${config.memoryGraph.enabled ? 'active' : 'disabled'}`);
-    dim(`└─ Agent scopes: ${config.agentScopes.enabled ? 'active' : 'disabled'}`);
-  } catch (err) {
-    dim(`Import failed (non-critical): ${err.message}`);
-  }
-
-  await backend.shutdown();
-}
-
-async function doSync() {
-  log('Syncing insights to auto memory files...');
-
-  const memPkg = await loadMemoryPackage();
-  if (!memPkg || !memPkg.AutoMemoryBridge) {
-    dim('Memory package not available — skipping sync');
-    return;
-  }
-
-  const config = readConfig();
-  const backend = new JsonFileBackend(STORE_PATH);
-  await backend.initialize();
-
-  const entryCount = await backend.count();
-  if (entryCount === 0) {
-    dim('No entries to sync');
-    await backend.shutdown();
-    return;
-  }
-
-  const bridgeConfig = {
-    workingDir: PROJECT_ROOT,
-    syncMode: 'on-session-end',
-  };
-
-  if (config.learningBridge.enabled && memPkg.LearningBridge) {
-    bridgeConfig.learning = {
-      sonaMode: config.learningBridge.sonaMode,
-      confidenceDecayRate: config.learningBridge.confidenceDecayRate,
-      consolidationThreshold: config.learningBridge.consolidationThreshold,
-    };
-  }
-
-  if (config.memoryGraph.enabled && memPkg.MemoryGraph) {
-    bridgeConfig.graph = {
-      pageRankDamping: config.memoryGraph.pageRankDamping,
-      maxNodes: config.memoryGraph.maxNodes,
-    };
-  }
-
-  const bridge = new memPkg.AutoMemoryBridge(backend, bridgeConfig);
-
-  try {
-    const syncResult = await bridge.syncToAutoMemory();
-    success(`Synced ${syncResult.synced} entries to auto memory`);
-    dim(`├─ Categories updated: ${syncResult.categories?.join(', ') || 'none'}`);
-    dim(`└─ Backend entries: ${entryCount}`);
-
-    // Curate MEMORY.md index with graph-aware ordering
-    await bridge.curateIndex();
-    success('Curated MEMORY.md index');
-  } catch (err) {
-    dim(`Sync failed (non-critical): ${err.message}`);
-  }
-
-  if (bridge.destroy) bridge.destroy();
-  await backend.shutdown();
-}
-
-async function doStatus() {
-  const memPkg = await loadMemoryPackage();
-  const config = readConfig();
-
-  console.log('\n=== Auto Memory Bridge Status ===\n');
-  console.log(`  Package:        ${memPkg ? '✅ Available' : '❌ Not found'}`);
-  console.log(`  Store:          ${existsSync(STORE_PATH) ? '✅ ' + STORE_PATH : '⏸ Not initialized'}`);
-  console.log(`  LearningBridge: ${config.learningBridge.enabled ? '✅ Enabled' : '⏸ Disabled'}`);
-  console.log(`  MemoryGraph:    ${config.memoryGraph.enabled ? '✅ Enabled' : '⏸ Disabled'}`);
-  console.log(`  AgentScopes:    ${config.agentScopes.enabled ? '✅ Enabled' : '⏸ Disabled'}`);
-
-  if (existsSync(STORE_PATH)) {
-    try {
-      const data = JSON.parse(readFileSync(STORE_PATH, 'utf-8'));
-      console.log(`  Entries:        ${Array.isArray(data) ? data.length : 0}`);
-    } catch { /* ignore */ }
-  }
-
-  console.log('');
-}
-
-// ============================================================================
-// Main
-// ============================================================================
-
-const command = process.argv[2] || 'status';
-
-try {
-  switch (command) {
-    case 'import': await doImport(); break;
-    case 'sync': await doSync(); break;
-    case 'status': await doStatus(); break;
-    default:
-      console.log('Usage: auto-memory-hook.mjs <import|sync|status>');
-      process.exit(1);
-  }
-} catch (err) {
-  // Hooks must never crash Claude Code - fail silently
-  dim(`Error (non-critical): ${err.message}`);
-}
+    dim(`├─ Learning: ${config.learningBridge.enabled ? 'active' : '
